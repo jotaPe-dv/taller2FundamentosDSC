@@ -137,6 +137,9 @@ def limpiar_inventario(df, registro):
     # =========================================================================
     # 1. NORMALIZAR CATEGORÍAS
     # =========================================================================
+    # TOOLKIT: str.strip().str.lower() para evitar duplicados por espacios/mayúsculas
+    df_limpio['Categoria'] = df_limpio['Categoria'].astype(str).str.strip()
+    
     mapeo_categorias = {
         'smart-phone': 'Smartphones',
         'LAPTOP': 'Laptops',
@@ -158,6 +161,9 @@ def limpiar_inventario(df, registro):
     # =========================================================================
     # 2. NORMALIZAR BODEGAS
     # =========================================================================
+    # TOOLKIT: str.strip() para evitar duplicados por espacios
+    df_limpio['Bodega_Origen'] = df_limpio['Bodega_Origen'].astype(str).str.strip()
+    
     mapeo_bodegas = {
         'norte': 'Norte',
         'ZONA_FRANCA': 'Zona_Franca',
@@ -262,10 +268,24 @@ def limpiar_inventario(df, registro):
     
     outliers_costo = df_limpio['Costo_Atipico'].sum()
     
+    # TOOLKIT ALERTA: "El valor 0 es un nulo técnico en costos. Cámbialo a NaN antes de imputar"
+    # Tratar ceros como nulos técnicos
+    ceros_costo = df_limpio['Costo_Unitario_USD'] == 0
+    cantidad_ceros_costo = ceros_costo.sum()
+    if cantidad_ceros_costo > 0:
+        df_limpio.loc[ceros_costo, 'Costo_Unitario_USD'] = np.nan
+        registro['transformaciones'].append({
+            'campo': 'Costo_Unitario_USD',
+            'tipo': 'Ceros como nulos técnicos',
+            'antes': f'{cantidad_ceros_costo} valores en 0',
+            'despues': 'Convertidos a NaN para imputación',
+            'justificacion': 'TOOLKIT: Un costo de $0 USD es un nulo técnico (error de captura). Se convierte a NaN para imputar correctamente.'
+        })
+    
     # Tratar costos extremadamente bajos (posibles errores)
-    costos_muy_bajos = df_limpio['Costo_Unitario_USD'] < 1
+    costos_muy_bajos = (df_limpio['Costo_Unitario_USD'] < 1) & (df_limpio['Costo_Unitario_USD'].notna())
     if costos_muy_bajos.sum() > 0:
-        mediana_costo = df_limpio.loc[~costos_muy_bajos, 'Costo_Unitario_USD'].median()
+        mediana_costo = df_limpio.loc[df_limpio['Costo_Unitario_USD'] >= 1, 'Costo_Unitario_USD'].median()
         df_limpio.loc[costos_muy_bajos, 'Costo_Unitario_USD'] = mediana_costo
         
         registro['valores_imputados'].append({
@@ -274,6 +294,28 @@ def limpiar_inventario(df, registro):
             'metodo': 'Imputación con mediana',
             'valor_imputado': round(mediana_costo, 2),
             'justificacion': f'Costos < $1 USD son claramente errores de captura. Se imputan con mediana (${round(mediana_costo, 2)}) para mantener el registro pero con valor realista.'
+        })
+    
+    # Imputar los nulos restantes en Costo_Unitario_USD (incluyendo los ceros convertidos)
+    nulos_costo_final = df_limpio['Costo_Unitario_USD'].isnull().sum()
+    if nulos_costo_final > 0:
+        # Imputar con mediana por categoría
+        for categoria in df_limpio['Categoria'].unique():
+            mask = (df_limpio['Costo_Unitario_USD'].isnull()) & (df_limpio['Categoria'] == categoria)
+            mediana_cat = df_limpio.loc[(df_limpio['Categoria'] == categoria) & (df_limpio['Costo_Unitario_USD'].notna()), 'Costo_Unitario_USD'].median()
+            if pd.notna(mediana_cat):
+                df_limpio.loc[mask, 'Costo_Unitario_USD'] = mediana_cat
+        
+        # Si aún quedan nulos, usar mediana global
+        mediana_global_costo = df_limpio['Costo_Unitario_USD'].median()
+        df_limpio['Costo_Unitario_USD'] = df_limpio['Costo_Unitario_USD'].fillna(mediana_global_costo)
+        
+        registro['valores_imputados'].append({
+            'campo': 'Costo_Unitario_USD',
+            'cantidad': nulos_costo_final,
+            'metodo': 'Mediana por categoría',
+            'valor_imputado': 'Variable por categoría',
+            'justificacion': f'{nulos_costo_final} costos nulos (incluyendo ceros técnicos). Se imputan con mediana de su categoría para mantener coherencia con productos similares.'
         })
     
     registro['transformaciones'].append({
@@ -336,8 +378,30 @@ def limpiar_transacciones(df, df_inventario, registro):
         })
     
     # =========================================================================
+    # 1.1 TRATAR FECHAS FUTURAS EN FECHA_VENTA
+    # =========================================================================
+    fecha_actual = pd.Timestamp('2026-01-31')
+    fechas_futuras = df_limpio['Fecha_Venta'] > fecha_actual
+    cantidad_futuras = fechas_futuras.sum()
+    
+    if cantidad_futuras > 0:
+        # Imputar fechas futuras con la fecha actual (conservar registros)
+        df_limpio.loc[fechas_futuras, 'Fecha_Venta'] = fecha_actual
+        
+        registro['valores_imputados'].append({
+            'campo': 'Fecha_Venta',
+            'cantidad': cantidad_futuras,
+            'metodo': 'Imputación con fecha actual',
+            'valor_imputado': str(fecha_actual.date()),
+            'justificacion': f'{cantidad_futuras} ventas con fecha futura (error de captura o sistema). Se imputan con fecha actual para conservar los registros de venta.'
+        })
+    
+    # =========================================================================
     # 2. NORMALIZAR CIUDADES
     # =========================================================================
+    # TOOLKIT: str.strip() para evitar duplicados por espacios
+    df_limpio['Ciudad_Destino'] = df_limpio['Ciudad_Destino'].astype(str).str.strip()
+    
     ciudades_antes = df_limpio['Ciudad_Destino'].nunique()
     
     mapeo_ciudades = {
@@ -364,8 +428,23 @@ def limpiar_transacciones(df, df_inventario, registro):
     })
     
     # =========================================================================
-    # 3. TRATAR CANTIDAD_VENDIDA NEGATIVA
+    # 3. TRATAR CANTIDAD_VENDIDA NEGATIVA Y CEROS
     # =========================================================================
+    # TOOLKIT ALERTA: Ceros como nulos técnicos (una venta de 0 unidades no tiene sentido)
+    ceros_cantidad = df_limpio['Cantidad_Vendida'] == 0
+    cantidad_ceros = ceros_cantidad.sum()
+    if cantidad_ceros > 0:
+        # Imputar con mediana (una venta con 0 unidades es error de captura)
+        mediana_cantidad = df_limpio.loc[df_limpio['Cantidad_Vendida'] > 0, 'Cantidad_Vendida'].median()
+        df_limpio.loc[ceros_cantidad, 'Cantidad_Vendida'] = mediana_cantidad
+        registro['valores_imputados'].append({
+            'campo': 'Cantidad_Vendida',
+            'cantidad': cantidad_ceros,
+            'metodo': 'Mediana (ceros como nulos técnicos)',
+            'valor_imputado': f'{mediana_cantidad:.0f} unidades',
+            'justificacion': f'TOOLKIT: {cantidad_ceros} ventas con cantidad 0 (nulo técnico). Una transacción con 0 unidades es un error. Se imputa con mediana.'
+        })
+    
     cantidades_negativas = df_limpio['Cantidad_Vendida'] < 0
     cantidad_neg = cantidades_negativas.sum()
     
@@ -409,8 +488,21 @@ def limpiar_transacciones(df, df_inventario, registro):
         })
     
     # =========================================================================
-    # 5. IMPUTAR COSTO_ENVIO NULOS
+    # 5. IMPUTAR COSTO_ENVIO NULOS Y CEROS
     # =========================================================================
+    # TOOLKIT ALERTA: Ceros como nulos técnicos en costos
+    ceros_costo_envio = df_limpio['Costo_Envio'] == 0
+    cantidad_ceros_envio = ceros_costo_envio.sum()
+    if cantidad_ceros_envio > 0:
+        df_limpio.loc[ceros_costo_envio, 'Costo_Envio'] = np.nan
+        registro['transformaciones'].append({
+            'campo': 'Costo_Envio',
+            'tipo': 'Ceros como nulos técnicos',
+            'antes': f'{cantidad_ceros_envio} valores en $0',
+            'despues': 'Convertidos a NaN para imputación',
+            'justificacion': 'TOOLKIT: Un costo de envío de $0 es un nulo técnico (error de captura). Se convierte a NaN para imputar correctamente.'
+        })
+    
     nulos_costo_envio = df_limpio['Costo_Envio'].isnull().sum()
     
     if nulos_costo_envio > 0:
@@ -427,7 +519,7 @@ def limpiar_transacciones(df, df_inventario, registro):
             'cantidad': nulos_costo_envio,
             'metodo': 'Mediana por ciudad',
             'valor_imputado': f'Variable (global: ${mediana_global_envio:.2f})',
-            'justificacion': f'{nulos_costo_envio} registros sin costo de envío. Se imputa con mediana de la ciudad de destino (costos de envío varían por ruta).'
+            'justificacion': f'{nulos_costo_envio} registros sin costo de envío (incluyendo ceros técnicos). Se imputa con mediana de la ciudad de destino (costos varían por ruta).'
         })
     
     # =========================================================================
