@@ -1278,8 +1278,8 @@ def generar_dashboard_estrategico(df_trans, df_inv, df_feed):
         fecha_ref = pd.Timestamp('2026-01-31')
         df_full['Dias_Sin_Revisar'] = (fecha_ref - df_full['Ultima_Revision_DT']).dt.days
         
-        # Convertir tickets a numérico (True=1, False=0)
-        df_full['Ticket_Numerico'] = df_full['Ticket_Soporte_Abierto'].astype(int)
+        # Convertir tickets a numérico (True=1, False=0), manejando NaN
+        df_full['Ticket_Numerico'] = df_full['Ticket_Soporte_Abierto'].fillna(False).astype(int)
         
         # Agrupar por Bodega
         df_riesgo = df_full.groupby('Bodega_Origen').agg({
