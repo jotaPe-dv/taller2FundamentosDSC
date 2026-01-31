@@ -1123,35 +1123,43 @@ def generar_dashboard_estrategico(df_trans, df_inv, df_feed):
     # -------------------------------------------------------------------------
     st.subheader("1. 💸 Fuga de Capital y Rentabilidad")
     
-    # Calcular Margen
-    # Asumimos Precio_Venta_Final es el total de la venta.
-    # COGS = Costo_Unitario * Cantidad
+    # Calcular Margen (excluyendo outliers de costo)
     if 'Costo_Unitario_USD' in df_full.columns:
-        df_full['COGS'] = df_full['Costo_Unitario_USD'] * df_full['Cantidad_Vendida']
-        df_full['Margen_Total'] = df_full['Precio_Venta_Final'] - df_full['COGS']
-        df_full['Margen_Pct'] = (df_full['Margen_Total'] / df_full['Precio_Venta_Final']) * 100
+        # Filtrar outliers de costo usando IQR
+        Q1_costo = df_full['Costo_Unitario_USD'].quantile(0.25)
+        Q3_costo = df_full['Costo_Unitario_USD'].quantile(0.75)
+        IQR_costo = Q3_costo - Q1_costo
+        limite_superior_costo = Q3_costo + 1.5 * IQR_costo
         
-        ventas_negativas = df_full[df_full['Margen_Total'] < 0].copy()
+        # Crear copia filtrada para análisis de margen
+        df_margen = df_full[df_full['Costo_Unitario_USD'] <= limite_superior_costo].copy()
+        outliers_excluidos = len(df_full) - len(df_margen)
+        
+        df_margen['COGS'] = df_margen['Costo_Unitario_USD'] * df_margen['Cantidad_Vendida']
+        df_margen['Margen_Total'] = df_margen['Precio_Venta_Final'] - df_margen['COGS']
+        df_margen['Margen_Pct'] = (df_margen['Margen_Total'] / df_margen['Precio_Venta_Final']) * 100
+        
+        ventas_negativas = df_margen[df_margen['Margen_Total'] < 0].copy()
         
         col1, col2 = st.columns([2, 1])
         
         with col1:
             fig_margen = px.scatter(
-                df_full.dropna(subset=['Margen_Total']),
+                df_margen.dropna(subset=['Margen_Total']),
                 x='Cantidad_Vendida',
                 y='Margen_Total',
                 color='Categoria',
-                title='Distribución de Márgenes por Venta',
+                title=f'Distribución de Márgenes por Venta (Excluidos {outliers_excluidos} outliers de costo)',
                 hover_data=['SKU_ID', 'Precio_Venta_Final', 'Costo_Unitario_USD'],
                 color_discrete_sequence=px.colors.qualitative.Bold
             )
-            # Agregar linea de cero
             fig_margen.add_hline(y=0, line_dash="dash", line_color="red")
             st.plotly_chart(fig_margen, use_container_width=True)
             
         with col2:
             st.metric("Total Ventas con Pérdida", f"{len(ventas_negativas):,}")
             st.metric("Pérdida Total Acumulada", f"${ventas_negativas['Margen_Total'].sum():,.2f}")
+            st.caption(f"ℹ️ Se excluyeron {outliers_excluidos} registros con costo > ${limite_superior_costo:,.0f}")
             
             top_loss_skus = ventas_negativas.groupby('SKU_ID')['Margen_Total'].sum().nsmallest(5).reset_index()
             st.write("Top 5 SKUs con Mayor Pérdida:")
@@ -1266,30 +1274,41 @@ def generar_dashboard_estrategico(df_trans, df_inv, df_feed):
     
     if 'Ultima_Revision' in df_full.columns and 'Ticket_Soporte_Abierto' in df_full.columns:
         # Calcular antigüedad de revisión
-        df_full['Ultima_Revision_DT'] = pd.to_datetime(df_full['Ultima_Revision'])
-        fecha_ref = pd.Timestamp('2026-01-31') # Fecha actual simulada
+        df_full['Ultima_Revision_DT'] = pd.to_datetime(df_full['Ultima_Revision'], errors='coerce')
+        fecha_ref = pd.Timestamp('2026-01-31')
         df_full['Dias_Sin_Revisar'] = (fecha_ref - df_full['Ultima_Revision_DT']).dt.days
+        
+        # Convertir tickets a numérico (True=1, False=0)
+        df_full['Ticket_Numerico'] = df_full['Ticket_Soporte_Abierto'].astype(int)
         
         # Agrupar por Bodega
         df_riesgo = df_full.groupby('Bodega_Origen').agg({
             'Dias_Sin_Revisar': 'mean',
-            'Ticket_Soporte_Abierto': lambda x: (sum(x) / len(x)) * 100, # Tasa de tickets %
+            'Ticket_Numerico': 'mean',
             'Transaccion_ID': 'count'
         }).reset_index()
         
-        df_riesgo.rename(columns={'Ticket_Soporte_Abierto': 'Tasa_Tickets_Pct'}, inplace=True)
+        df_riesgo['Tasa_Tickets_Pct'] = df_riesgo['Ticket_Numerico'] * 100
         
-        fig_riesgo = px.bar(
-            df_riesgo,
-            x='Bodega_Origen',
-            y='Dias_Sin_Revisar',
-            color='Tasa_Tickets_Pct',
-            title='Antigüedad de Revisión vs Tasa de Tickets (Color)',
-            labels={'Dias_Sin_Revisar': 'Días Promedio Sin Revisar Stock', 'Tasa_Tickets_Pct': '% Tickets Soporte'},
-            color_continuous_scale='RdYlGn_r' # Rojo es alto ticket rate
-        )
+        col_r1, col_r2 = st.columns([2, 1])
         
-        st.plotly_chart(fig_riesgo, use_container_width=True)
+        with col_r1:
+            fig_riesgo = px.bar(
+                df_riesgo,
+                x='Bodega_Origen',
+                y='Dias_Sin_Revisar',
+                color='Tasa_Tickets_Pct',
+                text=df_riesgo['Tasa_Tickets_Pct'].round(1).astype(str) + '%',
+                title='Antigüedad de Revisión vs Tasa de Tickets (Color)',
+                labels={'Dias_Sin_Revisar': 'Días Promedio Sin Revisar Stock', 'Tasa_Tickets_Pct': '% Tickets Soporte'},
+                color_continuous_scale='RdYlGn_r'
+            )
+            fig_riesgo.update_traces(textposition='outside')
+            st.plotly_chart(fig_riesgo, use_container_width=True)
+        
+        with col_r2:
+            st.dataframe(df_riesgo[['Bodega_Origen', 'Dias_Sin_Revisar', 'Tasa_Tickets_Pct']].round(2), hide_index=True)
+            
         st.info("Barras altas = Inventario desactualizado. Color Rojo = Muchos reclamos. La combinación es crítica.")
 
 
@@ -1352,37 +1371,102 @@ def generar_analisis_ia(api_key, df, dataset_nombre):
 
 def main():
     # =========================================================================
-    # SIDEBAR NAVIGATION
-    # =========================================================================
-    with st.sidebar:
-        st.image("https://img.icons8.com/fluency/96/warehouse.png", width=80)
-        st.title("🏭 TechLogistics")
-        st.markdown("---")
-        
-        pagina = st.radio(
-            "📌 Navegación",
-            [
-                "🔍 Auditoría",
-                "✅ Validaciones",
-                "📊 Datos Limpios",
-                "📈 Resumen Ejecutivo",
-                "📊 Dashboard Estratégico",
-                "🤖 Asistente IA"
-            ],
-            key="nav_radio"
-        )
-        
-        st.markdown("---")
-        st.caption("Sistema de Auditoría y Limpieza de Datos v2.0")
-    
-    # =========================================================================
-    # CARGAR DATOS (con cache)
+    # CARGAR DATOS PRIMERO (para poblar filtros)
     # =========================================================================
     try:
         df_inventario_original, df_transacciones_original, df_feedback_original = cargar_datos()
     except Exception as e:
         st.error(f"Error al cargar los datos: {e}")
         st.stop()
+    
+    # =========================================================================
+    # SIDEBAR NAVIGATION + FILTROS
+    # =========================================================================
+    with st.sidebar:
+        st.image("https://img.icons8.com/fluency/96/warehouse.png", width=80)
+        st.title("🏭 TechLogistics")
+        st.markdown("---")
+        
+        # Navegación
+        pagina = st.radio(
+            "📌 Navegación",
+            [
+                "🔍 Auditoría",
+                "🚚 Operaciones",
+                "👥 Cliente",
+                "🤖 Insights IA"
+            ],
+            key="nav_radio"
+        )
+        
+        st.markdown("---")
+        st.subheader("🎛️ Filtros Globales")
+        
+        # Selector de Fechas
+        st.markdown("**📅 Rango de Fechas**")
+        df_transacciones_original['Fecha_Venta_DT'] = pd.to_datetime(
+            df_transacciones_original['Fecha_Venta'], 
+            format='%d/%m/%Y', 
+            errors='coerce'
+        )
+        fecha_min = df_transacciones_original['Fecha_Venta_DT'].min()
+        fecha_max = df_transacciones_original['Fecha_Venta_DT'].max()
+        
+        if pd.notna(fecha_min) and pd.notna(fecha_max):
+            fecha_inicio = st.date_input(
+                "Desde:",
+                value=fecha_min.date(),
+                min_value=fecha_min.date(),
+                max_value=fecha_max.date(),
+                key="fecha_inicio"
+            )
+            fecha_fin = st.date_input(
+                "Hasta:",
+                value=fecha_max.date(),
+                min_value=fecha_min.date(),
+                max_value=fecha_max.date(),
+                key="fecha_fin"
+            )
+        else:
+            fecha_inicio = None
+            fecha_fin = None
+            st.warning("No se pudieron cargar fechas.")
+        
+        # Filtro de Categoría
+        st.markdown("**📦 Categoría**")
+        categorias_disponibles = ['Todas'] + sorted(df_inventario_original['Categoria'].dropna().unique().tolist())
+        categoria_seleccionada = st.selectbox(
+            "Seleccionar categoría:",
+            categorias_disponibles,
+            key="filtro_categoria"
+        )
+        
+        # Filtro de Bodega
+        st.markdown("**🏢 Bodega**")
+        bodegas_disponibles = ['Todas'] + sorted(df_inventario_original['Bodega_Origen'].dropna().unique().tolist())
+        bodega_seleccionada = st.selectbox(
+            "Seleccionar bodega:",
+            bodegas_disponibles,
+            key="filtro_bodega"
+        )
+        
+        st.markdown("---")
+        
+        # Botón Refrescar
+        if st.button("🔄 Refrescar Análisis", type="primary", use_container_width=True, key="btn_refrescar"):
+            # Limpiar cache de resultados para forzar recálculo
+            if 'resultados_auditoria' in st.session_state:
+                del st.session_state['resultados_auditoria']
+            st.rerun()
+        
+        st.markdown("---")
+        st.caption("Sistema de Auditoría y Limpieza de Datos v2.0")
+    
+    # Guardar filtros en session_state
+    st.session_state['filtro_fecha_inicio'] = fecha_inicio
+    st.session_state['filtro_fecha_fin'] = fecha_fin
+    st.session_state['filtro_categoria'] = categoria_seleccionada
+    st.session_state['filtro_bodega'] = bodega_seleccionada
     
     # =========================================================================
     # EJECUTAR LIMPIEZA (con cache en session_state)
@@ -1398,6 +1482,7 @@ def main():
             st.session_state['df_inventario_limpio'] = resultados['dataframes']['inventario']
             st.session_state['df_transacciones_limpio'] = resultados['dataframes']['transacciones']
             st.session_state['df_feedback_limpio'] = resultados['dataframes']['feedback']
+
     
     resultados = st.session_state['resultados_auditoria']
     
@@ -1406,126 +1491,211 @@ def main():
     # =========================================================================
     
     if pagina == "🔍 Auditoría":
-        mostrar_tab_auditoria(resultados)
+        st.header("🔍 Módulo de Auditoría y Calidad de Datos")
+        
+        # Sub-tabs dentro de Auditoría
+        tab_aud1, tab_aud2, tab_aud3, tab_aud4 = st.tabs([
+            "📊 Health Score",
+            "✅ Validaciones",
+            "📋 Datos Limpios",
+            "📈 Resumen"
+        ])
+        
+        with tab_aud1:
+            mostrar_tab_auditoria(resultados)
+        
+        with tab_aud2:
+            st.subheader("✅ Validaciones de Integridad")
+            df_validaciones = validar_integridad(
+                resultados['dataframes']['transacciones'],
+                resultados['dataframes']['inventario'],
+                df_transacciones_original
+            )
+            st.dataframe(df_validaciones, use_container_width=True)
+            
+            passed = df_validaciones['estado'].str.contains('PASS|DOCUMENTADO').sum()
+            total = len(df_validaciones)
+            if passed == total:
+                st.success(f"🎉 Todas las validaciones pasaron ({passed}/{total})")
+            else:
+                st.warning(f"⚠️ {passed}/{total} validaciones pasaron.")
+        
+        with tab_aud3:
+            st.subheader("📋 Vista Previa de Datos Limpios")
+            dataset_seleccionado = st.selectbox(
+                "Seleccionar dataset:",
+                ['inventario', 'transacciones', 'feedback'],
+                key="dataset_selector_aud"
+            )
+            df_mostrar = resultados['dataframes'][dataset_seleccionado]
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Registros", f"{len(df_mostrar):,}")
+            with col2:
+                st.metric("Columnas", len(df_mostrar.columns))
+            with col3:
+                st.metric("Health Score", f"{resultados['health_despues'][dataset_seleccionado]:.1f}")
+            
+            st.dataframe(df_mostrar.head(100), use_container_width=True)
+            st.download_button(
+                label=f"📥 Descargar {dataset_seleccionado}_limpio.csv",
+                data=df_mostrar.to_csv(index=False).encode('utf-8'),
+                file_name=f'{dataset_seleccionado}_limpio.csv',
+                mime='text/csv',
+                key="download_clean_aud"
+            )
+        
+        with tab_aud4:
+            st.subheader("📈 Resumen de Decisiones")
+            df_reporte = generar_reporte_limpieza(resultados)
+            st.dataframe(df_reporte, use_container_width=True)
+            
+            with st.expander("Ver Decisiones Clave"):
+                st.markdown("""
+                **1. Stock Negativo:** Cambio de signo (error de digitación).
+                **2. SKUs Huérfanos:** Conservados con flag `Sin_Catalogo`.
+                **3. Tiempos 999 días:** Imputados con mediana por ciudad.
+                **4. Costos Atípicos:** Marcados para revisión manual.
+                **5. Edades Imposibles:** Imputadas con mediana.
+                """)
     
-    elif pagina == "✅ Validaciones":
-        st.header("✅ Validaciones de Integridad")
-        st.markdown("---")
+    elif pagina == "🚚 Operaciones":
+        st.header("🚚 Dashboard de Operaciones Logísticas")
         
-        df_validaciones = validar_integridad(
-            resultados['dataframes']['transacciones'],
-            resultados['dataframes']['inventario'],
-            df_transacciones_original
-        )
+        # Sub-tabs dentro de Operaciones
+        tab_op1, tab_op2, tab_op3 = st.tabs([
+            "💸 Rentabilidad",
+            "🚛 Logística",
+            "👻 Venta Invisible"
+        ])
         
-        st.dataframe(df_validaciones, use_container_width=True)
-        
-        passed = df_validaciones['estado'].str.contains('PASS|DOCUMENTADO').sum()
-        total = len(df_validaciones)
-        
-        if passed == total:
-            st.success(f"🎉 Todas las validaciones pasaron ({passed}/{total})")
-        else:
-            st.warning(f"⚠️ {passed}/{total} validaciones pasaron. Revisar las marcadas.")
+        with tab_op1:
+            # Llamar solo la parte de Fuga de Capital
+            generar_dashboard_estrategico(
+                resultados['dataframes']['transacciones'],
+                resultados['dataframes']['inventario'],
+                resultados['dataframes']['feedback']
+            )
     
-    elif pagina == "📊 Datos Limpios":
-        st.header("📊 Vista Previa de Datos Limpios")
-        st.markdown("---")
+    elif pagina == "👥 Cliente":
+        st.header("👥 Análisis de Experiencia del Cliente")
         
-        dataset_seleccionado = st.selectbox(
-            "Seleccionar dataset:",
-            ['inventario', 'transacciones', 'feedback'],
-            key="dataset_selector"
-        )
+        df_feedback = resultados['dataframes']['feedback']
+        df_trans = resultados['dataframes']['transacciones']
         
-        df_mostrar = resultados['dataframes'][dataset_seleccionado]
+        # Sub-tabs dentro de Cliente
+        tab_cli1, tab_cli2, tab_cli3 = st.tabs([
+            "⭐ Ratings",
+            "📊 NPS",
+            "🎫 Tickets Soporte"
+        ])
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Registros", f"{len(df_mostrar):,}")
-        with col2:
-            st.metric("Columnas", len(df_mostrar.columns))
-        with col3:
-            st.metric("Health Score", f"{resultados['health_despues'][dataset_seleccionado]:.1f}")
+        with tab_cli1:
+            st.subheader("⭐ Análisis de Ratings")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Rating Producto (Promedio)", f"{df_feedback['Rating_Producto'].mean():.2f} / 5")
+            with col2:
+                st.metric("Rating Logística (Promedio)", f"{df_feedback['Rating_Logistica'].mean():.2f} / 5")
+            
+            # Distribución de ratings
+            fig_rating = px.histogram(
+                df_feedback,
+                x='Rating_Producto',
+                nbins=5,
+                title='Distribución de Rating de Producto',
+                color_discrete_sequence=['#636EFA']
+            )
+            st.plotly_chart(fig_rating, use_container_width=True)
         
-        st.dataframe(df_mostrar.head(100), use_container_width=True)
+        with tab_cli2:
+            st.subheader("📊 Net Promoter Score (NPS)")
+            
+            nps_promedio = df_feedback['Satisfaccion_NPS'].mean()
+            
+            # Clasificar NPS
+            df_feedback['NPS_Categoria'] = pd.cut(
+                df_feedback['Satisfaccion_NPS'],
+                bins=[-101, -50, 0, 50, 101],
+                labels=['Detractores', 'Pasivos Negativos', 'Pasivos Positivos', 'Promotores']
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("NPS Promedio", f"{nps_promedio:.1f}")
+            with col2:
+                promotores_pct = (df_feedback['Satisfaccion_NPS'] > 50).mean() * 100
+                st.metric("% Promotores (NPS > 50)", f"{promotores_pct:.1f}%")
+            
+            fig_nps = px.histogram(
+                df_feedback,
+                x='Satisfaccion_NPS',
+                nbins=20,
+                title='Distribución de NPS',
+                color_discrete_sequence=['#00CC96']
+            )
+            fig_nps.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Neutral")
+            st.plotly_chart(fig_nps, use_container_width=True)
         
-        st.download_button(
-            label=f"📥 Descargar {dataset_seleccionado}_limpio.csv",
-            data=df_mostrar.to_csv(index=False).encode('utf-8'),
-            file_name=f'{dataset_seleccionado}_limpio.csv',
-            mime='text/csv',
-            key="download_clean"
-        )
+        with tab_cli3:
+            st.subheader("🎫 Tickets de Soporte")
+            
+            # Tasa de tickets
+            tasa_tickets = df_feedback['Ticket_Soporte_Abierto'].mean() * 100
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Tasa de Tickets Abiertos", f"{tasa_tickets:.1f}%")
+            with col2:
+                total_tickets = df_feedback['Ticket_Soporte_Abierto'].sum()
+                st.metric("Total Tickets Abiertos", f"{total_tickets:,}")
+            
+            # Tickets por recomendación
+            tickets_recomendacion = df_feedback.groupby('Recomienda_Marca')['Ticket_Soporte_Abierto'].mean().reset_index()
+            tickets_recomendacion['Tasa_Tickets'] = tickets_recomendacion['Ticket_Soporte_Abierto'] * 100
+            
+            fig_tickets = px.bar(
+                tickets_recomendacion,
+                x='Recomienda_Marca',
+                y='Tasa_Tickets',
+                title='Tasa de Tickets según Recomendación de Marca',
+                color='Tasa_Tickets',
+                color_continuous_scale='RdYlGn_r'
+            )
+            st.plotly_chart(fig_tickets, use_container_width=True)
     
-    elif pagina == "📈 Resumen Ejecutivo":
-        st.header("📈 Resumen Ejecutivo")
+    elif pagina == "🤖 Insights IA":
+        st.header("🤖 Insights Generados por IA (Llama-3.3)")
         st.markdown("---")
         
         st.markdown("""
-        ## 🎯 Objetivo del Bloque 1
-        
-        Crear un módulo de **Auditoría y Transparencia** que documenta TODO el proceso
-        de transformación de datos con decisiones justificadas.
-        
-        ---
-        
-        ## 📊 Resultados de la Limpieza
-        """)
-        
-        df_reporte = generar_reporte_limpieza(resultados)
-        st.dataframe(df_reporte, use_container_width=True)
-        
-        st.markdown("""
-        ---
-        
-        ## 🔑 Decisiones Clave Tomadas
-        
-        ### 1. **Stock Negativo (Inventario)**
-        - **Decisión:** Cambiar signo en lugar de eliminar
-        - **Justificación:** Los valores absolutos son coherentes con promedios de categoría
-        
-        ### 2. **SKUs Huérfanos (Transacciones)**
-        - **Decisión:** Mantener con flag `Sin_Catalogo = True`
-        - **Justificación:** Representan ingresos reales que no deben perderse
-        
-        ### 3. **Tiempos de Entrega 999 días**
-        - **Decisión:** Imputar con mediana por ciudad
-        - **Justificación:** 999 es claramente un placeholder, no dato real
-        
-        ### 4. **Costos Atípicos**
-        - **Decisión:** Marcar con flag pero conservar
-        - **Justificación:** Requieren validación manual del negocio
-        
-        ### 5. **Edades Imposibles (Feedback)**
-        - **Decisión:** Imputar con mediana
-        - **Justificación:** 195 años es error de captura evidente
-        """)
-    
-    elif pagina == "📊 Dashboard Estratégico":
-        st.header("📊 Dashboard Estratégico de Negocio")
-        st.markdown("Respuestas visuales a las 5 preguntas clave de la gerencia.")
-        st.markdown("---")
-        
-        generar_dashboard_estrategico(
-            resultados['dataframes']['transacciones'],
-            resultados['dataframes']['inventario'],
-            resultados['dataframes']['feedback']
-        )
-    
-    elif pagina == "🤖 Asistente IA":
-        st.header("🤖 Asistente Inteligente logístico (Llama-3.3)")
-        st.markdown("---")
-        
-        st.markdown("""
-        Esta sección utiliza Inteligencia Artificial Generativa para analizar las estadísticas de tus datos
+        Esta sección utiliza **Inteligencia Artificial Generativa** para analizar las estadísticas de tus datos
         y proveer recomendaciones estratégicas en tiempo real.
         """)
         
-        api_key = st.text_input("🔑 Ingresa tu API Key de Groq:", type="password", help="Necesitas una key de console.groq.com", key="api_key_input")
+        # Gestión de secretos: Primero intenta st.secrets, luego input manual
+        api_key = None
         
+        # Intentar obtener de st.secrets (Streamlit Cloud)
+        try:
+            api_key = st.secrets.get("GROQ_API_KEY", None)
+            if api_key:
+                st.success("✅ API Key cargada desde secrets de Streamlit.")
+        except Exception:
+            pass
+        
+        # Si no hay secret, permitir input manual (desarrollo local)
         if not api_key:
-            st.warning("⚠️ Necesitas ingresar una API Key para usar el asistente.")
+            api_key = st.text_input(
+                "🔑 Ingresa tu API Key de Groq:", 
+                type="password", 
+                help="En producción, configura GROQ_API_KEY en Settings > Secrets de Streamlit Cloud.",
+                key="api_key_input"
+            )
+            if not api_key:
+                st.warning("⚠️ Necesitas ingresar una API Key o configurarla en Secrets.")
         
         st.markdown("---")
         
@@ -1534,27 +1704,21 @@ def main():
         with col_sel1:
             dataset_ia = st.selectbox(
                 "Selecciona el dataset a analizar:",
-                ['dataframes_inventario', 'dataframes_transacciones', 'dataframes_feedback'],
-                format_func=lambda x: x.split('_')[1].capitalize(),
+                ['inventario', 'transacciones', 'feedback'],
+                format_func=lambda x: x.capitalize(),
                 key="ia_dataset_selector"
             )
-            key_map = {
-                'dataframes_inventario': 'inventario',
-                'dataframes_transacciones': 'transacciones',
-                'dataframes_feedback': 'feedback'
-            }
-            df_ia = resultados['dataframes'][key_map[dataset_ia]]
+            df_ia = resultados['dataframes'][dataset_ia]
             
         with col_sel2:
-            st.info(f"Analizando **{len(df_ia):,}** registros de {key_map[dataset_ia].capitalize()}.")
+            st.info(f"Analizando **{len(df_ia):,}** registros de {dataset_ia.capitalize()}.")
             
         with st.expander("Ver estadísticas que analizará la IA"):
             st.dataframe(df_ia.describe(), use_container_width=True)
             
         if st.button("🚀 Generar Recomendaciones Estratégicas", type="primary", disabled=not api_key, key="generate_ia"):
             with st.spinner("🤖 Llama-3.3 está analizando tus datos..."):
-                recomendacion = generar_analisis_ia(api_key, df_ia, key_map[dataset_ia])
-                
+                recomendacion = generar_analisis_ia(api_key, df_ia, dataset_ia)
                 st.session_state['ultima_recomendacion'] = recomendacion
                 
         if 'ultima_recomendacion' in st.session_state:
@@ -1566,4 +1730,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
