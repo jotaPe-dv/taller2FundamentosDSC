@@ -1,0 +1,30 @@
+Loading data...
+
+Total transactions: 10000
+
+1. Referential Integrity:
+   - Unique SKUs in Transactions: 2889
+   - Unique SKUs in Inventory: 2500
+   - SKUs in Transactions MISSING from Inventory: 480
+
+2. Date Formats (Fecha_Venta):
+   - Total rows: 10000
+   - Rows with parseable dates (assuming standard formats): 10000
+   - Rows with unparseable/invalid dates: 0
+   - Sample of raw dates:
+['20/05/2025', '13/12/2024', '15/05/2025', '27/12/2025', '08/06/2025', '08/01/2025', '31/01/2026', '04/11/2025', '14/12/2025', '23/10/2024']
+
+3. Delivery Time Outliers (Tiempo_Entrega_Real):
+   - Stats:
+count    10000.000000
+mean        19.881900
+std         69.914879
+min          1.000000
+25%          8.000000
+50%         15.000000
+75%         22.000000
+max        999.000000
+Name: Tiempo_Entrega_Real, dtype: float64
+   - Records with >= 999 days: 50
+   - IQR Upper Bound for outliers: 43.00
+   - Total outliers > 43.00: 50

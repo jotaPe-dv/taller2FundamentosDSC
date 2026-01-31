@@ -1332,7 +1332,7 @@ def generar_analisis_ia(api_key, df, dataset_nombre):
         """
         
         completion = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": "Eres un asistente experto en análisis de datos logísticos."},
                 {"role": "user", "content": prompt}
@@ -1351,47 +1351,64 @@ def generar_analisis_ia(api_key, df, dataset_nombre):
 # =============================================================================
 
 def main():
-    st.title("🏭 TechLogistics Colombia")
-    st.markdown("### Sistema de Auditoría y Limpieza de Datos")
-    st.markdown("---")
+    # =========================================================================
+    # SIDEBAR NAVIGATION
+    # =========================================================================
+    with st.sidebar:
+        st.image("https://img.icons8.com/fluency/96/warehouse.png", width=80)
+        st.title("🏭 TechLogistics")
+        st.markdown("---")
+        
+        pagina = st.radio(
+            "📌 Navegación",
+            [
+                "🔍 Auditoría",
+                "✅ Validaciones",
+                "📊 Datos Limpios",
+                "📈 Resumen Ejecutivo",
+                "📊 Dashboard Estratégico",
+                "🤖 Asistente IA"
+            ],
+            key="nav_radio"
+        )
+        
+        st.markdown("---")
+        st.caption("Sistema de Auditoría y Limpieza de Datos v2.0")
     
-    # Cargar datos originales
+    # =========================================================================
+    # CARGAR DATOS (con cache)
+    # =========================================================================
     try:
         df_inventario_original, df_transacciones_original, df_feedback_original = cargar_datos()
-        
-        st.success(f"""
-        ✅ Datos cargados correctamente:
-        - Inventario: {len(df_inventario_original):,} registros
-        - Transacciones: {len(df_transacciones_original):,} registros  
-        - Feedback: {len(df_feedback_original):,} registros
-        """)
-        
     except Exception as e:
         st.error(f"Error al cargar los datos: {e}")
         st.stop()
     
-    # Ejecutar limpieza
-    with st.spinner("🔄 Ejecutando auditoría y limpieza de datos..."):
-        resultados = ejecutar_limpieza_completa(
-            df_inventario_original.copy(),
-            df_transacciones_original.copy(),
-            df_feedback_original.copy()
-        )
+    # =========================================================================
+    # EJECUTAR LIMPIEZA (con cache en session_state)
+    # =========================================================================
+    if 'resultados_auditoria' not in st.session_state:
+        with st.spinner("🔄 Ejecutando auditoría y limpieza de datos..."):
+            resultados = ejecutar_limpieza_completa(
+                df_inventario_original.copy(),
+                df_transacciones_original.copy(),
+                df_feedback_original.copy()
+            )
+            st.session_state['resultados_auditoria'] = resultados
+            st.session_state['df_inventario_limpio'] = resultados['dataframes']['inventario']
+            st.session_state['df_transacciones_limpio'] = resultados['dataframes']['transacciones']
+            st.session_state['df_feedback_limpio'] = resultados['dataframes']['feedback']
     
-    # Crear tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "🔍 Auditoría",
-        "✅ Validaciones",
-        "📊 Datos Limpios",
-        "📈 Resumen Ejecutivo",
-        "📊 Dashboard Estratégico",
-        "🤖 Asistente IA"
-    ])
+    resultados = st.session_state['resultados_auditoria']
     
-    with tab1:
+    # =========================================================================
+    # CONTENIDO SEGÚN PÁGINA SELECCIONADA
+    # =========================================================================
+    
+    if pagina == "🔍 Auditoría":
         mostrar_tab_auditoria(resultados)
     
-    with tab2:
+    elif pagina == "✅ Validaciones":
         st.header("✅ Validaciones de Integridad")
         st.markdown("---")
         
@@ -1403,7 +1420,6 @@ def main():
         
         st.dataframe(df_validaciones, use_container_width=True)
         
-        # Resumen de validaciones
         passed = df_validaciones['estado'].str.contains('PASS|DOCUMENTADO').sum()
         total = len(df_validaciones)
         
@@ -1412,13 +1428,14 @@ def main():
         else:
             st.warning(f"⚠️ {passed}/{total} validaciones pasaron. Revisar las marcadas.")
     
-    with tab3:
+    elif pagina == "📊 Datos Limpios":
         st.header("📊 Vista Previa de Datos Limpios")
         st.markdown("---")
         
         dataset_seleccionado = st.selectbox(
             "Seleccionar dataset:",
-            ['inventario', 'transacciones', 'feedback']
+            ['inventario', 'transacciones', 'feedback'],
+            key="dataset_selector"
         )
         
         df_mostrar = resultados['dataframes'][dataset_seleccionado]
@@ -1433,15 +1450,15 @@ def main():
         
         st.dataframe(df_mostrar.head(100), use_container_width=True)
         
-        # Botón para descargar dataset limpio
         st.download_button(
             label=f"📥 Descargar {dataset_seleccionado}_limpio.csv",
             data=df_mostrar.to_csv(index=False).encode('utf-8'),
             file_name=f'{dataset_seleccionado}_limpio.csv',
-            mime='text/csv'
+            mime='text/csv',
+            key="download_clean"
         )
     
-    with tab4:
+    elif pagina == "📈 Resumen Ejecutivo":
         st.header("📈 Resumen Ejecutivo")
         st.markdown("---")
         
@@ -1456,7 +1473,6 @@ def main():
         ## 📊 Resultados de la Limpieza
         """)
         
-        # Tabla resumen
         df_reporte = generar_reporte_limpieza(resultados)
         st.dataframe(df_reporte, use_container_width=True)
         
@@ -1484,30 +1500,9 @@ def main():
         ### 5. **Edades Imposibles (Feedback)**
         - **Decisión:** Imputar con mediana
         - **Justificación:** 195 años es error de captura evidente
-        
-        ---
-        
-        ## ✅ Checklist de Validación - Bloque 1
-        
-        | Criterio | Estado |
-        |----------|--------|
-        | Health Score ANTES calculado | ✅ |
-        | Health Score DESPUÉS calculado | ✅ |
-        | Registro de eliminaciones | ✅ |
-        | Registro de imputaciones | ✅ |
-        | Justificaciones documentadas | ✅ |
-        | Decisión SKUs huérfanos | ✅ |
-        | Validación integridad merge | ✅ |
-        | Normalización de ciudades | ✅ |
-        | Fechas futuras tratadas | ✅ |
-        | Costos anómalos marcados | ✅ |
-        | Tab Auditoría funcional | ✅ |
-        | Tab Auditoría funcional | ✅ |
-        | Botón descarga funcional | ✅ |
-        | Integración IA Llama-3 | ✅ |
         """)
-        
-    with tab5:
+    
+    elif pagina == "📊 Dashboard Estratégico":
         st.header("📊 Dashboard Estratégico de Negocio")
         st.markdown("Respuestas visuales a las 5 preguntas clave de la gerencia.")
         st.markdown("---")
@@ -1517,9 +1512,9 @@ def main():
             resultados['dataframes']['inventario'],
             resultados['dataframes']['feedback']
         )
-        
-    with tab6:
-        st.header("🤖 Asistente Inteligente logístico (Llama-3)")
+    
+    elif pagina == "🤖 Asistente IA":
+        st.header("🤖 Asistente Inteligente logístico (Llama-3.3)")
         st.markdown("---")
         
         st.markdown("""
@@ -1527,24 +1522,22 @@ def main():
         y proveer recomendaciones estratégicas en tiempo real.
         """)
         
-        # 1. Input API Key
-        api_key = st.text_input("🔑 Ingresa tu API Key de Groq:", type="password", help="Necesitas una key de console.groq.com")
+        api_key = st.text_input("🔑 Ingresa tu API Key de Groq:", type="password", help="Necesitas una key de console.groq.com", key="api_key_input")
         
         if not api_key:
             st.warning("⚠️ Necesitas ingresar una API Key para usar el asistente.")
         
         st.markdown("---")
         
-        # 2. Selección y Filtros (Simulados para el prompt)
         col_sel1, col_sel2 = st.columns(2)
         
         with col_sel1:
             dataset_ia = st.selectbox(
                 "Selecciona el dataset a analizar:",
                 ['dataframes_inventario', 'dataframes_transacciones', 'dataframes_feedback'],
-                format_func=lambda x: x.split('_')[1].capitalize()
+                format_func=lambda x: x.split('_')[1].capitalize(),
+                key="ia_dataset_selector"
             )
-            # Mapeo para obtener el DF correcto del diccionario 'resultados'
             key_map = {
                 'dataframes_inventario': 'inventario',
                 'dataframes_transacciones': 'transacciones',
@@ -1555,27 +1548,22 @@ def main():
         with col_sel2:
             st.info(f"Analizando **{len(df_ia):,}** registros de {key_map[dataset_ia].capitalize()}.")
             
-        # Mostrar resumen estad´sitico que se enviará
         with st.expander("Ver estadísticas que analizará la IA"):
             st.dataframe(df_ia.describe(), use_container_width=True)
             
-        # 3. Botón de Generación
-        if st.button("🚀 Generar Recomendaciones Estratégicas", type="primary", disabled=not api_key):
-            with st.spinner("🤖 Llama-3 está analizando tus datos..."):
+        if st.button("🚀 Generar Recomendaciones Estratégicas", type="primary", disabled=not api_key, key="generate_ia"):
+            with st.spinner("🤖 Llama-3.3 está analizando tus datos..."):
                 recomendacion = generar_analisis_ia(api_key, df_ia, key_map[dataset_ia])
                 
-                st.markdown("### 🧠 Análisis Estratégico Generado")
-                st.success("Análisis completado exitosamente.")
-                st.markdown(recomendacion)
+                st.session_state['ultima_recomendacion'] = recomendacion
                 
-                st.caption("Nota: Este análisis es generado por un modelo de IA y debe ser validado por expertos.")
-    
-    # Guardar datasets limpios en session_state para uso posterior
-    st.session_state['df_inventario_limpio'] = resultados['dataframes']['inventario']
-    st.session_state['df_transacciones_limpio'] = resultados['dataframes']['transacciones']
-    st.session_state['df_feedback_limpio'] = resultados['dataframes']['feedback']
-    st.session_state['resultados_auditoria'] = resultados
+        if 'ultima_recomendacion' in st.session_state:
+            st.markdown("### 🧠 Análisis Estratégico Generado")
+            st.success("Análisis completado exitosamente.")
+            st.markdown(st.session_state['ultima_recomendacion'])
+            st.caption("Nota: Este análisis es generado por un modelo de IA y debe ser validado por expertos.")
 
 
 if __name__ == "__main__":
     main()
+
