@@ -8,8 +8,12 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import streamlit as st
+from groq import Groq
+import plotly.express as px
 import warnings
 warnings.filterwarnings('ignore')
+
+
 
 # =============================================================================
 # CONFIGURACIÓN DE PÁGINA STREAMLIT
@@ -1090,6 +1094,259 @@ def validar_integridad(df_transacciones, df_inventario, df_transacciones_origina
 
 
 # =============================================================================
+# DASHBOARD ESTRATÉGICO (PLOTLY)
+# =============================================================================
+
+def generar_dashboard_estrategico(df_trans, df_inv, df_feed):
+    """
+    Genera gráficas estratégicas para responder 5 preguntas de negocio.
+    """
+    # Pre-procesamiento para uniones
+    # 1. Join Transacciones + Inventario
+    df_full = df_trans.merge(df_inv, on='SKU_ID', how='left')
+    
+    # 2. Join con Feedback
+    # Feedback se une por Transaccion_ID? Vamos a asumir que si, o verificar si hay SKU.
+    # df_feedback tiene Transaccion_ID.
+    # Nota: Si Feedback no tiene Transaccion_ID, revisar estructura.
+    # Asumimos que Feedback -> Transaccion_ID es la llave.
+    
+    # Verificar columnas de feedback para el merge
+    if 'Transaccion_ID' in df_feed.columns and 'Transaccion_ID' in df_trans.columns:
+        df_full = df_full.merge(df_feed, on='Transaccion_ID', how='left')
+    else:
+        st.error("No se puede unir Feedback: Falta Transaccion_ID")
+        return
+
+    # -------------------------------------------------------------------------
+    # 1. FUGA DE CAPITAL (Margen Negativo)
+    # -------------------------------------------------------------------------
+    st.subheader("1. 💸 Fuga de Capital y Rentabilidad")
+    
+    # Calcular Margen
+    # Asumimos Precio_Venta_Final es el total de la venta.
+    # COGS = Costo_Unitario * Cantidad
+    if 'Costo_Unitario_USD' in df_full.columns:
+        df_full['COGS'] = df_full['Costo_Unitario_USD'] * df_full['Cantidad_Vendida']
+        df_full['Margen_Total'] = df_full['Precio_Venta_Final'] - df_full['COGS']
+        df_full['Margen_Pct'] = (df_full['Margen_Total'] / df_full['Precio_Venta_Final']) * 100
+        
+        ventas_negativas = df_full[df_full['Margen_Total'] < 0].copy()
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            fig_margen = px.scatter(
+                df_full.dropna(subset=['Margen_Total']),
+                x='Cantidad_Vendida',
+                y='Margen_Total',
+                color='Categoria',
+                title='Distribución de Márgenes por Venta',
+                hover_data=['SKU_ID', 'Precio_Venta_Final', 'Costo_Unitario_USD'],
+                color_discrete_sequence=px.colors.qualitative.Bold
+            )
+            # Agregar linea de cero
+            fig_margen.add_hline(y=0, line_dash="dash", line_color="red")
+            st.plotly_chart(fig_margen, use_container_width=True)
+            
+        with col2:
+            st.metric("Total Ventas con Pérdida", f"{len(ventas_negativas):,}")
+            st.metric("Pérdida Total Acumulada", f"${ventas_negativas['Margen_Total'].sum():,.2f}")
+            
+            top_loss_skus = ventas_negativas.groupby('SKU_ID')['Margen_Total'].sum().nsmallest(5).reset_index()
+            st.write("Top 5 SKUs con Mayor Pérdida:")
+            st.dataframe(top_loss_skus, hide_index=True)
+
+    else:
+        st.warning("No se puede calcular margen: Costo_Unitario_USD nulo.")
+
+    st.markdown("---")
+
+    # -------------------------------------------------------------------------
+    # 2. CRISIS LOGÍSTICA (Tiempo Entrega vs NPS)
+    # -------------------------------------------------------------------------
+    st.subheader("2. 🚚 Crisis Logística: Correlación NPS vs Tiempos")
+    
+    if 'Satisfaccion_NPS' in df_full.columns:
+        # Agrupar por Ciudad y Bodega
+        df_logistica = df_full.groupby(['Ciudad_Destino', 'Bodega_Origen']).agg({
+            'Tiempo_Entrega_Real': 'mean',
+            'Satisfaccion_NPS': 'mean',
+            'Transaccion_ID': 'count'
+        }).reset_index()
+        
+        fig_logistica = px.scatter(
+            df_logistica,
+            x='Tiempo_Entrega_Real',
+            y='Satisfaccion_NPS',
+            size='Transaccion_ID',
+            color='Bodega_Origen',
+            text='Ciudad_Destino',
+            title='Correlación Tiempo Entrega vs NPS (Por Ruta)',
+            labels={'Tiempo_Entrega_Real': 'Tiempo Promedio (Días)', 'Satisfaccion_NPS': 'NPS Promedio'},
+            color_discrete_sequence=px.colors.qualitative.T10
+        )
+        st.plotly_chart(fig_logistica, use_container_width=True)
+        
+        st.caption("Tamaño de burbuja = Volumen de envíos. Busque burbujas abajo a la derecha (Lento + Bajo NPS).")
+    
+    st.markdown("---")
+
+    # -------------------------------------------------------------------------
+    # 3. VENTA INVISIBLE (SKUs sin Catálogo)
+    # -------------------------------------------------------------------------
+    st.subheader("3. 👻 Análisis de Venta Invisible")
+    
+    if 'Sin_Catalogo' in df_full.columns:
+        df_invisible = df_full.groupby('Sin_Catalogo')['Precio_Venta_Final'].sum().reset_index()
+        df_invisible['Tipo'] = df_invisible['Sin_Catalogo'].map({True: 'Sin Catálogo (Invisible)', False: 'En Catálogo (Visible)'})
+        
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            fig_pie = px.pie(
+                df_invisible, 
+                values='Precio_Venta_Final', 
+                names='Tipo', 
+                title='Proporción de Ingresos: Visible vs Invisible',
+                color='Tipo',
+                color_discrete_map={'Sin Catálogo (Invisible)': 'red', 'En Catálogo (Visible)': 'lightgrey'}
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+        with col4:
+            monto_invisible = df_invisible[df_invisible['Sin_Catalogo'] == True]['Precio_Venta_Final'].sum() if not df_invisible[df_invisible['Sin_Catalogo'] == True].empty else 0
+            pct_invisible = (monto_invisible / df_invisible['Precio_Venta_Final'].sum()) * 100
+            
+            st.metric("Impacto Financiero (Riesgo)", f"${monto_invisible:,.2f}")
+            st.metric("% del Ingreso Total", f"{pct_invisible:.2f}%")
+            st.info("Este capital ingresa pero no tiene trazabilidad de costos ni reposición automática.")
+
+    st.markdown("---")
+
+    # -------------------------------------------------------------------------
+    # 4. DIAGNÓSTICO DE FIDELIDAD (Stock vs Sentiment - Paradoja)
+    # -------------------------------------------------------------------------
+    st.subheader("4. ❤️ Diagnóstico de Fidelidad: Disponibilidad vs Satisfacción")
+    
+    # Agrupar por Categoría
+    if 'Stock_Actual' in df_full.columns:
+        df_cat = df_full.groupby('Categoria').agg({
+            'Stock_Actual': 'mean',
+            'Rating_Producto': 'mean', # Usamos Rating 1-5 que es más directo para producto que NPS
+            'SKU_ID': 'nunique'
+        }).reset_index()
+        
+        fig_paradox = px.scatter(
+            df_cat,
+            x='Stock_Actual',
+            y='Rating_Producto',
+            text='Categoria',
+            size='SKU_ID',
+            title='Matriz Fidelidad: Stock Promedio vs Rating Producto',
+            labels={'Stock_Actual': 'Stock Promedio (Unidades)', 'Rating_Producto': 'Rating Promedio (1-5)'}
+        )
+        
+        # Cuadrantes
+        mediana_stock = df_cat['Stock_Actual'].median()
+        mediana_rating = df_cat['Rating_Producto'].median()
+        
+        fig_paradox.add_vline(x=mediana_stock, line_dash="dot", annotation_text="Mediana Stock")
+        fig_paradox.add_hline(y=mediana_rating, line_dash="dot", annotation_text="Mediana Rating")
+        
+        st.plotly_chart(fig_paradox, use_container_width=True)
+        st.caption("Cuadrante Inferior-Derecha: PARADOJA (Mucho Stock, Mala Calidad).")
+
+    st.markdown("---")
+
+    # -------------------------------------------------------------------------
+    # 5. RIESGO OPERATIVO (Antigüedad Revision vs Tickets)
+    # -------------------------------------------------------------------------
+    st.subheader("5. ⚠️ Riesgo Operativo: Ceguera de Inventario vs Quejas")
+    
+    if 'Ultima_Revision' in df_full.columns and 'Ticket_Soporte_Abierto' in df_full.columns:
+        # Calcular antigüedad de revisión
+        df_full['Ultima_Revision_DT'] = pd.to_datetime(df_full['Ultima_Revision'])
+        fecha_ref = pd.Timestamp('2026-01-31') # Fecha actual simulada
+        df_full['Dias_Sin_Revisar'] = (fecha_ref - df_full['Ultima_Revision_DT']).dt.days
+        
+        # Agrupar por Bodega
+        df_riesgo = df_full.groupby('Bodega_Origen').agg({
+            'Dias_Sin_Revisar': 'mean',
+            'Ticket_Soporte_Abierto': lambda x: (sum(x) / len(x)) * 100, # Tasa de tickets %
+            'Transaccion_ID': 'count'
+        }).reset_index()
+        
+        df_riesgo.rename(columns={'Ticket_Soporte_Abierto': 'Tasa_Tickets_Pct'}, inplace=True)
+        
+        fig_riesgo = px.bar(
+            df_riesgo,
+            x='Bodega_Origen',
+            y='Dias_Sin_Revisar',
+            color='Tasa_Tickets_Pct',
+            title='Antigüedad de Revisión vs Tasa de Tickets (Color)',
+            labels={'Dias_Sin_Revisar': 'Días Promedio Sin Revisar Stock', 'Tasa_Tickets_Pct': '% Tickets Soporte'},
+            color_continuous_scale='RdYlGn_r' # Rojo es alto ticket rate
+        )
+        
+        st.plotly_chart(fig_riesgo, use_container_width=True)
+        st.info("Barras altas = Inventario desactualizado. Color Rojo = Muchos reclamos. La combinación es crítica.")
+
+
+# =============================================================================
+# FUNCIÓN DE ANÁLISIS CON IA (GROQ / LLAMA 3)
+# =============================================================================
+
+def generar_analisis_ia(api_key, df, dataset_nombre):
+    """
+    Genera un análisis estratégico usando Llama 3 via Groq.
+    Analiza el resumen estadístico de los datos.
+    """
+    if not api_key:
+        return "⚠️ Por favor ingresa tu API Key de Groq para continuar."
+    
+    try:
+        # Generar resumen estadístico para el prompt
+        resumen = df.describe().to_string()
+        
+        # Limitar longitud si es muy largo (aunque describe() suele ser corto)
+        if len(resumen) > 6000:
+            resumen = resumen[:6000] + "..."
+            
+        client = Groq(api_key=api_key)
+        
+        prompt = f"""
+        Actúa como un Consultor Senior de Logística y Data Science.
+        Analiza el siguiente resumen estadístico del dataset '{dataset_nombre}':
+        
+        {resumen}
+        
+        Genera 3 párrafos de recomendación estratégica EN TIEMPO REAL basándote en estos números.
+        Estructura tu respuesta así:
+        
+        1. **Diagnóstico General**: Qué nos dicen los números sobre la salud de esta área (dispersión, promedios, máximos).
+        2. **Oportunidades de Eficiencia**: Dónde se puede mejorar (ej. reducir tiempos, optimizar stock).
+        3. **Acciones Inmediatas**: Pasos concretos a seguir basado en los datos.
+        
+        Mantén un tono profesional, directo y orientado a negocio.
+        """
+        
+        completion = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {"role": "system", "content": "Eres un asistente experto en análisis de datos logísticos."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=800
+        )
+        return completion.choices[0].message.content
+        
+    except Exception as e:
+        return f"❌ Error al conectar con la IA: {str(e)}"
+
+
+# =============================================================================
 # APLICACIÓN PRINCIPAL
 # =============================================================================
 
@@ -1122,11 +1379,13 @@ def main():
         )
     
     # Crear tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🔍 Auditoría",
         "✅ Validaciones",
         "📊 Datos Limpios",
-        "📈 Resumen Ejecutivo"
+        "📈 Resumen Ejecutivo",
+        "📊 Dashboard Estratégico",
+        "🤖 Asistente IA"
     ])
     
     with tab1:
@@ -1243,8 +1502,73 @@ def main():
         | Fechas futuras tratadas | ✅ |
         | Costos anómalos marcados | ✅ |
         | Tab Auditoría funcional | ✅ |
+        | Tab Auditoría funcional | ✅ |
         | Botón descarga funcional | ✅ |
+        | Integración IA Llama-3 | ✅ |
         """)
+        
+    with tab5:
+        st.header("📊 Dashboard Estratégico de Negocio")
+        st.markdown("Respuestas visuales a las 5 preguntas clave de la gerencia.")
+        st.markdown("---")
+        
+        generar_dashboard_estrategico(
+            resultados['dataframes']['transacciones'],
+            resultados['dataframes']['inventario'],
+            resultados['dataframes']['feedback']
+        )
+        
+    with tab6:
+        st.header("🤖 Asistente Inteligente logístico (Llama-3)")
+        st.markdown("---")
+        
+        st.markdown("""
+        Esta sección utiliza Inteligencia Artificial Generativa para analizar las estadísticas de tus datos
+        y proveer recomendaciones estratégicas en tiempo real.
+        """)
+        
+        # 1. Input API Key
+        api_key = st.text_input("🔑 Ingresa tu API Key de Groq:", type="password", help="Necesitas una key de console.groq.com")
+        
+        if not api_key:
+            st.warning("⚠️ Necesitas ingresar una API Key para usar el asistente.")
+        
+        st.markdown("---")
+        
+        # 2. Selección y Filtros (Simulados para el prompt)
+        col_sel1, col_sel2 = st.columns(2)
+        
+        with col_sel1:
+            dataset_ia = st.selectbox(
+                "Selecciona el dataset a analizar:",
+                ['dataframes_inventario', 'dataframes_transacciones', 'dataframes_feedback'],
+                format_func=lambda x: x.split('_')[1].capitalize()
+            )
+            # Mapeo para obtener el DF correcto del diccionario 'resultados'
+            key_map = {
+                'dataframes_inventario': 'inventario',
+                'dataframes_transacciones': 'transacciones',
+                'dataframes_feedback': 'feedback'
+            }
+            df_ia = resultados['dataframes'][key_map[dataset_ia]]
+            
+        with col_sel2:
+            st.info(f"Analizando **{len(df_ia):,}** registros de {key_map[dataset_ia].capitalize()}.")
+            
+        # Mostrar resumen estad´sitico que se enviará
+        with st.expander("Ver estadísticas que analizará la IA"):
+            st.dataframe(df_ia.describe(), use_container_width=True)
+            
+        # 3. Botón de Generación
+        if st.button("🚀 Generar Recomendaciones Estratégicas", type="primary", disabled=not api_key):
+            with st.spinner("🤖 Llama-3 está analizando tus datos..."):
+                recomendacion = generar_analisis_ia(api_key, df_ia, key_map[dataset_ia])
+                
+                st.markdown("### 🧠 Análisis Estratégico Generado")
+                st.success("Análisis completado exitosamente.")
+                st.markdown(recomendacion)
+                
+                st.caption("Nota: Este análisis es generado por un modelo de IA y debe ser validado por expertos.")
     
     # Guardar datasets limpios en session_state para uso posterior
     st.session_state['df_inventario_limpio'] = resultados['dataframes']['inventario']
