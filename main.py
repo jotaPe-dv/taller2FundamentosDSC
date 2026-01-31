@@ -1461,12 +1461,7 @@ def main():
         
         st.markdown("---")
         st.caption("Sistema de Auditoría y Limpieza de Datos v2.0")
-    
-    # Guardar filtros en session_state
-    st.session_state['filtro_fecha_inicio'] = fecha_inicio
-    st.session_state['filtro_fecha_fin'] = fecha_fin
-    st.session_state['filtro_categoria'] = categoria_seleccionada
-    st.session_state['filtro_bodega'] = bodega_seleccionada
+
     
     # =========================================================================
     # EJECUTAR LIMPIEZA (con cache en session_state)
