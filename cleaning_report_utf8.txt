@@ -1,0 +1,26 @@
+Cargando datos...
+Transacciones originales: 10000 registros
+
+--- 1. Analizando Integridad Referencial ---
+SKUs ·nicos en transacciones no encontrados en inventario: 480
+Total de registros afectados (Ventas HuÚrfanas): 1751
+Ingresos asociados a ventas huÚrfanas: $1,743,832.97
+ACCIËN: Se ha creado la columna 'Sin_Catalogo' (True/False) para identificar estos registros sin eliminarlos.
+
+--- 2. Normalizando Fechas ---
+Fechas convertidas al formato estßndar (YYYY-MM-DD).
+╔XITO: Todas las fechas fueron procesadas correctamente.
+
+--- 3. Tratando Outliers de Tiempos de Entrega ---
+Registros con Tiempo_Entrega_Real >= 999: 50
+ACCIËN: Se imputaron los 50 valores usando la mediana por ciudad de destino.
+EstadÝsticas antes de correcci¾n (max): 999
+EstadÝsticas despuÚs de correcci¾n (max): 29.0
+
+Archivo limpio guardado como: transacciones_logistica_limpio.csv
+
+Muestra de datos procesados (primeras 3 filas):
+      SKU_ID Fecha_Venta  Tiempo_Entrega_Real  Sin_Catalogo
+0  PROD-3619  2025-04-25                 15.0          True
+1  PROD-1456  2025-07-29                 29.0         False
+2  PROD-1102  2025-05-31                 13.0         False
