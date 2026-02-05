@@ -316,21 +316,23 @@ def limpiar_transacciones(df, df_inventario, registro):
         registro['skus_huerfanos_decision'] = f'DECISIÓN ESTRATÉGICA: Los {ventas_huerfanas} registros con SKUs huérfanos fueron CONSERVADOS con un flag "Sin_Catalogo". Representan ${ingresos_huerfanos:,.2f} en ingresos que no pueden descartarse sin auditoría.'
     
     # =========================================================================
-    # 6. TRATAR DESCUENTOS NEGATIVOS
+    # 6. TRATAR DESCUENTOS NEGATIVOS (Comentado - columna no existe en dataset actual)
     # =========================================================================
-    descuentos_negativos = df_limpio['Descuento_Aplicado_USD'] < 0
-    if descuentos_negativos.sum() > 0:
-        # Cambiar signo
-        df_limpio.loc[descuentos_negativos, 'Descuento_Aplicado_USD'] = \
-            df_limpio.loc[descuentos_negativos, 'Descuento_Aplicado_USD'].abs()
-        
-        registro['valores_imputados'].append({
-            'campo': 'Descuento_Aplicado_USD',
-            'cantidad': descuentos_negativos.sum(),
-            'metodo': 'Cambio de signo',
-            'valor_imputado': 'Valor absoluto',
-            'justificacion': 'Descuentos negativos no tienen sentido de negocio. Se cambió el signo asumiendo error de digitación.'
-        })
+    # NOTA: La columna 'Descuento_Aplicado_USD' no existe en transacciones_logistica_v2.csv
+    # Esta sección se mantiene comentada para referencia futura
+    # if 'Descuento_Aplicado_USD' in df_limpio.columns:
+    #     descuentos_negativos = df_limpio['Descuento_Aplicado_USD'] < 0
+    #     if descuentos_negativos.sum() > 0:
+    #         df_limpio.loc[descuentos_negativos, 'Descuento_Aplicado_USD'] = \
+    #             df_limpio.loc[descuentos_negativos, 'Descuento_Aplicado_USD'].abs()
+    #         
+    #         registro['valores_imputados'].append({
+    #             'campo': 'Descuento_Aplicado_USD',
+    #             'cantidad': descuentos_negativos.sum(),
+    #             'metodo': 'Cambio de signo',
+    #             'valor_imputado': 'Valor absoluto',
+    #             'justificacion': 'Descuentos negativos no tienen sentido de negocio. Se cambió el signo asumiendo error de digitación.'
+    #         })
     
     return df_limpio, registro
 

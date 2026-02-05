@@ -1,8 +1,11 @@
 # 🏭 TechLogistics Colombia - Dashboard de Auditoría y Análisis
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://taller2fundamentosdsc.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://taller2fundamentosdsc-hbzxwpygy4ttrvkamx6rdu.streamlit.app)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![AI-Assisted](https://img.shields.io/badge/AI--Assisted-Claude%20%2B%20Copilot-blueviolet.svg)](https://github.com/jotaPe-dv/taller2FundamentosDSC#-uso-de-inteligencia-artificial-en-el-desarrollo)
+
+> 🤖 **Proyecto desarrollado con asistencia de IA:** Este trabajo académico utilizó herramientas de IA (Claude Opus/Sonnet, GitHub Copilot) como asistentes de programación bajo supervisión y validación humana completa. Ver [sección de transparencia](#-uso-de-inteligencia-artificial-en-el-desarrollo) para más detalles.
 
 ## 📋 Descripción del Proyecto
 
@@ -35,7 +38,7 @@ Un **Sistema de Auditoría y Transparencia** que:
 
 ## 🚀 Demo en Vivo
 
-**▶️ [Acceder a la Aplicación](https://taller2fundamentosdsc.streamlit.app)**
+**▶️ [Acceder a la Aplicación](https://taller2fundamentosdsc-hbzxwpygy4ttrvkamx6rdu.streamlit.app)**
 
 ---
 
@@ -179,13 +182,23 @@ Componentes de interfaz de usuario de Streamlit.
 
 ## 🔧 Tecnologías Utilizadas
 
+### 📦 Producción (Runtime)
 | Tecnología | Uso |
 |------------|-----|
-| **Streamlit** | Framework de aplicaciones web |
+| **Streamlit** | Framework de aplicaciones web interactivas |
 | **Pandas** | Manipulación y análisis de datos |
-| **Plotly** | Visualizaciones interactivas |
-| **Groq API** | Integración con Llama-3.3 para IA generativa |
-| **NumPy** | Operaciones numéricas |
+| **Plotly** | Visualizaciones interactivas y dashboards |
+| **Groq API** | Integración con Llama-3.3-70b para IA generativa |
+| **NumPy** | Operaciones numéricas y computación científica |
+
+### 🤖 Desarrollo (Asistencia IA)
+| Herramienta | Propósito en el Desarrollo |
+|-------------|---------------------------|
+| **GitHub Copilot (Antigravity)** | Autocompletado inteligente y generación de código |
+| **Claude Opus** | Arquitectura, diseño de sistemas y mejores prácticas |
+| **Claude Sonnet** | Refactorización, modularización y optimización |
+
+*Ver sección completa "Uso de Inteligencia Artificial en el Desarrollo" más abajo para detalles.*
 
 ---
 
@@ -201,11 +214,108 @@ Componentes de interfaz de usuario de Streamlit.
 
 ---
 
-## 👨‍💻 Autor
+## 🤖 Uso de Inteligencia Artificial en el Desarrollo
+
+Este proyecto fue desarrollado con el apoyo de herramientas de IA para optimizar el proceso de ingeniería de software:
+
+### 🛠️ Herramientas de IA Utilizadas
+
+| Herramienta | Uso en el Proyecto | Propósito |
+|-------------|-------------------|-----------|
+| **GitHub Copilot (Antigravity)** | Asistencia en escritura de código | Autocompletado inteligente, generación de funciones y documentación |
+| **Claude Opus (Anthropic)** | Arquitectura y diseño | Diseño de arquitectura modular, mejores prácticas de Python |
+| **Claude Sonnet (Anthropic)** | Refactorización y optimización | "Carpintería" del código, modularización, optimización de funciones |
+| **Llama-3.3-70b (Groq)** | IA Generativa en producción | Análisis estratégico de datos en tiempo real para usuarios finales |
+
+### 📝 Disclaimer sobre el Uso de IA
+
+> ⚠️ **Transparencia en el Desarrollo:**
+> 
+> - Este proyecto utilizó herramientas de IA como **asistentes de programación**, no como desarrolladores autónomos
+> - Todo el código fue **revisado, comprendido y validado** por los autores
+> - Las decisiones de arquitectura, diseño y lógica de negocio fueron tomadas por el equipo humano
+> - La IA fue utilizada para **acelerar tareas repetitivas** 
+
+### 🎓 Valor Pedagógico
+
+El uso de IA en este proyecto demuestra:
+- ✅ Capacidad de aprovechar herramientas modernas de la industria
+- ✅ Habilidad para validar y mejorar código generado por IA
+- ✅ Comprensión profunda de arquitectura de software
+- ✅ Competencia en prompt engineering y dirección de IA
+- ✅ Preparación para entornos profesionales modernos
+
+---
+
+## 📚 Referencias y Fuentes
+
+### Datasets
+- **Datos sintéticos generados** para propósitos educativos del curso
+- Basados en casos reales de empresas de distribución logística
+- Fuente: Material del curso Fundamentos de Ciencia de Datos - Universidad EAFIT
+
+### Frameworks y Bibliotecas
+- [Streamlit Documentation](https://docs.streamlit.io/) - Framework de aplicaciones web
+- [Pandas Documentation](https://pandas.pydata.org/docs/) - Análisis de datos
+- [Plotly Python](https://plotly.com/python/) - Visualizaciones interactivas
+- [NumPy Documentation](https://numpy.org/doc/) - Computación científica
+- [Groq API Documentation](https://console.groq.com/docs) - IA Generativa
+
+### Conceptos y Metodologías
+- **Health Score de Datos**: Metodología adaptada de prácticas de Data Quality Management
+- **Integridad Referencial**: Principios de bases de datos relacionales
+- **Detección de Outliers**: Método IQR (Interquartile Range) - Tukey, J. W. (1977)
+- **NPS (Net Promoter Score)**: Reichheld, F. (2003) - Harvard Business Review
+- **Arquitectura Modular**: Principios SOLID y Clean Architecture
+
+### Herramientas de Desarrollo
+- **Visual Studio Code** con extensiones de Python
+- **Git/GitHub** para control de versiones
+- **Streamlit Cloud** para deployment
+- **Python 3.10+** como lenguaje base
+
+---
+
+## ⚖️ Consideraciones Éticas y Privacidad
+
+### 🔒 Protección de Datos
+- Este proyecto utiliza **datos sintéticos ficticios**
+- No se procesaron datos personales reales
+- Cumple con principios de privacidad por diseño
+
+### 📊 Transparencia en Análisis
+- Todas las decisiones de limpieza están **documentadas**
+- Los registros excluidos se **conservan con flags** para auditoría
+- Las transformaciones son **reversibles y trazables**
+
+### 🤝 Uso Responsable de IA
+- La IA se usó como herramienta de **aumentación**, no sustitución
+- Se mantiene **responsabilidad humana** en todas las decisiones
+- Las recomendaciones de IA incluyen **disclaimers de validación**
+
+---
+
+## 👨‍💻 Autores
 
 **Pedro Saldarriaga**  
-Estudiante - Fundamentos de Ciencia de Datos  
-Universidad [Tu Universidad]
+**Juan Pablo Mejía**  
+**Juan Pablo Rua**
+
+Estudiantes - Fundamentos de Ciencia de Datos  
+Universidad EAFIT - 2026
+
+📧 Contacto: [A través del repositorio de GitHub](https://github.com/jotaPe-dv/taller2FundamentosDSC)
+
+---
+
+## 🙏 Agradecimientos
+
+- **Profesores del curso** de Fundamentos de Ciencia de Datos - Universidad EAFIT
+- **Groq** por proporcionar acceso a Llama-3.3-70b para IA Generativa
+- **Anthropic** por Claude (Opus & Sonnet) utilizados en el desarrollo
+- **GitHub** por Copilot/Antigravity
+- **Comunidad de Streamlit** por su framework open-source
+- **Comunidad Python** por las excelentes bibliotecas de ciencia de datos
 
 ---
 
@@ -214,9 +324,3 @@ Universidad [Tu Universidad]
 Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para detalles.
 
 ---
-
-## 🙏 Agradecimientos
-
-- Profesores del curso de Fundamentos de Ciencia de Datos
-- Groq por proporcionar acceso a Llama-3.3
-- Comunidad de Streamlit
